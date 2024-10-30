@@ -59,9 +59,9 @@ def generate_connectivity_matrix(
 
             if i < nExcitation and j < nExcitation:
                 mat[i, j] = uniform_or_probability(p=pEE, w=wEE)
-            elif i >= nExcitation and j < nExcitation:
-                mat[i, j] = uniform_or_probability(p=pEI, w=wEI)
             elif i < nExcitation and j >= nExcitation:
+                mat[i, j] = uniform_or_probability(p=pEI, w=wEI)
+            elif i >= nExcitation and j < nExcitation:
                 mat[i, j] = uniform_or_probability(p=pIE, w=wIE)
             else:
                 mat[i, j] = uniform_or_probability(p=pII, w=wII)
@@ -80,8 +80,12 @@ class Model(object):
             self.nExcitation, self.nInhibition, **kwargs)
 
         params = {
-            "Vt": -20*mV,  # spiking threshold
+            "Vt": -25*mV,  # spiking threshold
             "dt": 0.025 * ms,  # simulation timestep
+            "poisson_rate": 28 * Hz,  # rate of poisson input
+            "poisson_step": 3 * mV,
+
+            "synapse_delay": 1.5 * ms,
 
             # Reversal Potentials
             "E_leak": -54.4 * mV,
@@ -149,7 +153,7 @@ class Model(object):
         eqs += eqs_var
 
         self.neurons = NeuronGroup(
-            self.N, eqs, method="euler", dt=params["dt"], threshold="v>Vt", namespace={"Vt": params["Vt"]}, reset="")
+            self.N, eqs, method="euler", dt=params["dt"], threshold="v>Vt", refractory="v>=Vt", namespace={"Vt": params["Vt"]}, reset="")
 
         self.neurons.E_leak = params["E_leak"]
         self.neurons.E_Na = params["E_Na"]
@@ -164,20 +168,34 @@ class Model(object):
         self.neurons.n = 0.32350875
         self.neurons.v = -64.06540041*mV
 
-        # TODO: improve/actually make work the synapse model
-        sources, targets = self.mat.nonzero()
-        eqs_synapse = """
-        v_syn = w * mV : volt
-        w              : 1
-        """
-        self.synapses = Synapses(
-            self.neurons, self.neurons, eqs_synapse, on_pre="v += v_syn", dt=params["dt"])
-        self.synapses.connect()
-        self.synapses.w[:] = self.mat.flatten()
+        # setup poisson input
+        self.poissonSources = PoissonGroup(
+            N=N, rates=params["poisson_rate"], dt=params["dt"])
 
-        self.statemon = StateMonitor(self.neurons, ["v", "m", "h", "n", "I",
-                                                    "g_K", "g_Na", "I_leak", "I_Na", "I_K"], record=0)
+        eqs_synapse = "w : 1"  # Define the weight variable w
+
+        self.poissonSynapses = Synapses(self.poissonSources, self.neurons, eqs_synapse,
+                                        on_pre="v += w * poisson_step", namespace={"poisson_step": params["poisson_step"]}, dt=params["dt"])
+        self.poissonSynapses.connect(j="i")
+        self.poissonSynapses.w = 1
+
+        sources, targets = self.mat.nonzero()
+
+        self.synapses = Synapses(
+            self.neurons, self.neurons, model=eqs_synapse, on_pre="v_post += w * mV", dt=params["dt"], delay=params["synapse_delay"])
+        self.synapses.connect(i=sources, j=targets)
+
+        # Set synaptic weights from `self.mat`
+        # scale as needed, here set in mV
+        self.synapses.w = self.mat[sources, targets]
+
+        monitorVars = ["v", "m", "h", "n", "I",
+                       "g_K", "g_Na", "I_leak", "I_Na", "I_K"]
+        monitorIdx = random.sample(range(N), 100)
+
+        self.statemon = StateMonitor(
+            self.neurons, monitorVars, record=monitorIdx)
         self.spikemon = SpikeMonitor(self.neurons)
         self.popmon = PopulationRateMonitor(self.neurons)
-        self.net = Network([self.neurons, self.synapses,
+        self.net = Network([self.neurons, self.synapses, self.poissonSources, self.poissonSynapses,
                            self.statemon, self.spikemon, self.popmon])
