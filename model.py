@@ -23,7 +23,8 @@ def generate_connectivity_matrix(
         pEE: Optional[float] = None, wEE: Optional[float] = None,
         pEI: Optional[float] = None, wEI: Optional[float] = None,
         pIE: Optional[float] = None, wIE: Optional[float] = None,
-        pII: Optional[float] = None, wII: Optional[float] = None) -> NDArray[float64]:
+        pII: Optional[float] = None, wII: Optional[float] = None,
+        binary=False) -> NDArray[float64]:
     """Generates an excitation-inhibition connectivity matrix
 
     The matrix will have the following structure where E represents excitation
@@ -37,14 +38,15 @@ def generate_connectivity_matrix(
         nInhibition -- Number of inhibitory neurons.
 
     Keyword Arguments:
-        pEE -- Probability of a connection between excitatory neurons. (default: {None})
-        wEE -- Weight of connection between excitatory neurons. (default: {None})
-        pEI -- Probability of a connection between excitatory and inhibitory neurons. (default: {None})
-        wEI -- Weight of connection between excitatory and inhibitory neurons. (default: {None})
-        pIE -- Probability of a connection between inhibitory and excitatory neurons. (default: {None})
-        wIE -- Weight of connection between inhibitory and excitatory neurons. (default: {None})
-        pII -- Probability of a connection between inhibitory neurons. (default: {None})
-        wII -- Weight of connection between inhibitory neurons. (default: {None})
+        pEE    -- Probability of a connection between excitatory neurons. (default: {None})
+        wEE    -- Weight of connection between excitatory neurons. (default: {None})
+        pEI    -- Probability of a connection between excitatory and inhibitory neurons. (default: {None})
+        wEI    -- Weight of connection between excitatory and inhibitory neurons. (default: {None})
+        pIE    -- Probability of a connection between inhibitory and excitatory neurons. (default: {None})
+        wIE    -- Weight of connection between inhibitory and excitatory neurons. (default: {None})
+        pII    -- Probability of a connection between inhibitory neurons. (default: {None})
+        wII    -- Weight of connection between inhibitory neurons. (default: {None})
+        binary -- Should synaptic connections be uniformly disctributed or connected or not
 
     Returns:
         The connectivity matrix.
@@ -58,19 +60,19 @@ def generate_connectivity_matrix(
                 continue
 
             if i < nExcitation and j < nExcitation:
-                mat[i, j] = uniform_or_probability(p=pEE, w=wEE)
+                mat[i, j] = uniform_or_probability(p=pEE, w=wEE, binary=binary)
             elif i < nExcitation and j >= nExcitation:
-                mat[i, j] = uniform_or_probability(p=pEI, w=wEI)
+                mat[i, j] = uniform_or_probability(p=pEI, w=wEI, binary=binary)
             elif i >= nExcitation and j < nExcitation:
-                mat[i, j] = uniform_or_probability(p=pIE, w=wIE)
+                mat[i, j] = uniform_or_probability(p=pIE, w=wIE, binary=binary)
             else:
-                mat[i, j] = uniform_or_probability(p=pII, w=wII)
+                mat[i, j] = uniform_or_probability(p=pII, w=wII, binary=binary)
 
     return mat
 
 
 class Model(object):
-    def __init__(self, N=100, pExcitation=0.6, **kwargs):
+    def __init__(self, N=100, pExcitation=0.6, params={}, **kwargs):
         self.N = N
 
         self.nExcitation = round(self.N * pExcitation)
@@ -82,8 +84,8 @@ class Model(object):
         params = {
             "Vt": -25*mV,  # spiking threshold
             "dt": 0.025 * ms,  # simulation timestep
-            "poisson_rate": 28 * Hz,  # rate of poisson input
-            "poisson_step": 3 * mV,
+            "poisson_rate": 13 * Hz,  # rate of poisson input
+            "poisson_step": 1 * mV,
 
             "synapse_delay": 1.5 * ms,
 
@@ -99,7 +101,7 @@ class Model(object):
 
             # Membrane Capacitance
             "Cm": 1. * uF / cm ** 2,
-        }
+        } | params
 
         # Equations:
         eqs_V = """
@@ -199,3 +201,14 @@ class Model(object):
         self.popmon = PopulationRateMonitor(self.neurons)
         self.net = Network([self.neurons, self.synapses, self.poissonSources, self.poissonSynapses,
                            self.statemon, self.spikemon, self.popmon])
+
+        self.runtime = 0 * ms
+
+    def run(self, runtime, **kwargs):
+        """Runs the brian2 simulation and keeps track of the total runtime
+
+        Arguments:
+            runtime -- The time to run the simulation for
+        """
+        self.net.run(runtime, **kwargs)
+        self.runtime += runtime
