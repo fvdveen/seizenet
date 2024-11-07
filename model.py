@@ -2,7 +2,7 @@ from brian2 import *
 import numpy as np
 import random
 
-from typing import Optional
+from typing import Optional, Tuple
 from numpy.typing import NDArray
 
 
@@ -16,6 +16,16 @@ def uniform_or_probability(p: Optional[float] = None, w: float = 1, binary=False
             return random.uniform(0, 1) * w
     else:
         return 0
+
+
+def uniform_or_probability_matrix(p: Optional[float] = None, w: float = 1, shape: Tuple[int, int] = (1, 1), binary=False):
+    if p is None:
+        return np.random.uniform(0, w, shape)
+
+    rand_matrix = np.random.uniform(0, 1, shape)
+    if binary:
+        return (rand_matrix < p) * w
+    return np.where(rand_matrix < p, rand_matrix * w, 0)
 
 
 def generate_connectivity_matrix(
@@ -54,19 +64,21 @@ def generate_connectivity_matrix(
     n = nExcitation + nInhibition
     mat = np.zeros((n, n))
 
-    for i in range(n):
-        for j in range(n):
-            if i is j:
-                continue
+    # Define the shape of each block
+    EE_shape = (nExcitation, nExcitation)
+    EI_shape = (nExcitation, nInhibition)
+    IE_shape = (nInhibition, nExcitation)
+    II_shape = (nInhibition, nInhibition)
 
-            if i < nExcitation and j < nExcitation:
-                mat[i, j] = uniform_or_probability(p=pEE, w=wEE, binary=binary)
-            elif i < nExcitation and j >= nExcitation:
-                mat[i, j] = uniform_or_probability(p=pEI, w=wEI, binary=binary)
-            elif i >= nExcitation and j < nExcitation:
-                mat[i, j] = uniform_or_probability(p=pIE, w=wIE, binary=binary)
-            else:
-                mat[i, j] = uniform_or_probability(p=pII, w=wII, binary=binary)
+    # Fill each block using vectorized operations
+    mat[:nExcitation, :nExcitation] = uniform_or_probability_matrix(
+        pEE, wEE, EE_shape, binary)
+    mat[:nExcitation, nExcitation:] = uniform_or_probability_matrix(
+        pEI, wEI, EI_shape, binary)
+    mat[nExcitation:, :nExcitation] = uniform_or_probability_matrix(
+        pIE, wIE, IE_shape, binary)
+    mat[nExcitation:, nExcitation:] = uniform_or_probability_matrix(
+        pII, wII, II_shape, binary)
 
     return mat
 
@@ -212,3 +224,6 @@ class Model(object):
         """
         self.net.run(runtime, **kwargs)
         self.runtime += runtime
+
+    def set_neuron_attribute(self, name, value):
+        setattr(self.neurons, name, value)
