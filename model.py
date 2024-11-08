@@ -84,7 +84,7 @@ def generate_connectivity_matrix(
 
 
 class Model(object):
-    def __init__(self, N=100, pExcitation=0.6, params={}, **kwargs):
+    def __init__(self, N=100, pExcitation=0.6, pPoisson=1, params={}, **kwargs):
         self.N = N
 
         self.nExcitation = round(self.N * pExcitation)
@@ -97,7 +97,8 @@ class Model(object):
             "Vt": -25*mV,  # spiking threshold
             "dt": 0.025 * ms,  # simulation timestep
             "poisson_rate": 13 * Hz,  # rate of poisson input
-            "poisson_step": 1 * mV,
+            "poisson_step": 0.1 * mV,
+            "poisson_factor": 1000,  # Amount of poisson inputs
 
             "synapse_delay": 1.5 * ms,
 
@@ -178,19 +179,19 @@ class Model(object):
         self.neurons.Cm = params["Cm"]
 
         self.neurons.m = 0.06452912
-        self.neurons.h = 0.57323377
+        self.neurons.h = 0.47323377
         self.neurons.n = 0.32350875
         self.neurons.v = -64.06540041*mV
 
         # setup poisson input
         self.poissonSources = PoissonGroup(
-            N=N, rates=params["poisson_rate"], dt=params["dt"])
+            N=params["poisson_factor"], rates=params["poisson_rate"], dt=params["dt"])
 
         eqs_synapse = "w : 1"  # Define the weight variable w
 
         self.poissonSynapses = Synapses(self.poissonSources, self.neurons, eqs_synapse,
-                                        on_pre="v += w * poisson_step", namespace={"poisson_step": params["poisson_step"]}, dt=params["dt"])
-        self.poissonSynapses.connect(j="i")
+                                        on_pre="v += w * poisson_step", namespace={"poisson_step": params["poisson_step"], "pPoisson": pPoisson}, dt=params["dt"])
+        self.poissonSynapses.connect(p="pPoisson")
         self.poissonSynapses.w = 1
 
         sources, targets = self.mat.nonzero()
@@ -213,6 +214,7 @@ class Model(object):
         self.popmon = PopulationRateMonitor(self.neurons)
         self.net = Network([self.neurons, self.synapses, self.poissonSources, self.poissonSynapses,
                            self.statemon, self.spikemon, self.popmon])
+        self.params = params
 
         self.runtime = 0 * ms
 
