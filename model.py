@@ -184,15 +184,19 @@ class Model(object):
         self.neurons.v = -64.06540041*mV
 
         # setup poisson input
+        nPoisson = 1000
         self.poissonSources = PoissonGroup(
-            N=1000, rates=params["poisson_rate"], dt=params["dt"])
+            N=nPoisson, rates=params["poisson_rate"], dt=params["dt"])
 
         eqs_synapse = "w : 1"  # Define the weight variable w
 
         self.poissonSynapses = Synapses(self.poissonSources, self.neurons, eqs_synapse,
                                         on_pre="v += w * poisson_step", namespace={"poisson_step": params["poisson_step"]}, dt=params["dt"])
-        self.poissonSynapses.connect(p=pPoisson)
-        self.poissonSynapses.w = 1
+        poissonMat = uniform_or_probability_matrix(
+            pPoisson, 1, (nPoisson, N), True)
+        poissonSources, poissonTargets = poissonMat.nonzero()
+        self.poissonSynapses.connect(i=poissonSources, j=poissonTargets)
+        self.poissonSynapses.w = poissonMat[poissonSources, poissonTargets]
 
         sources, targets = self.mat.nonzero()
 
@@ -206,7 +210,7 @@ class Model(object):
 
         monitorVars = ["v", "m", "h", "n", "I",
                        "g_K", "g_Na", "I_leak", "I_Na", "I_K"]
-        monitorIdx = random.sample(range(N), 100)
+        monitorIdx = random.sample(range(N), 10)
 
         self.statemon = StateMonitor(
             self.neurons, monitorVars, record=monitorIdx)
