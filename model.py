@@ -185,13 +185,13 @@ class Model(object):
 
         # setup poisson input
         self.poissonSources = PoissonGroup(
-            N=N, rates=params["poisson_rate"], dt=params["dt"])
+            N=1000, rates=params["poisson_rate"], dt=params["dt"])
 
         eqs_synapse = "w : 1"  # Define the weight variable w
 
         self.poissonSynapses = Synapses(self.poissonSources, self.neurons, eqs_synapse,
-                                        on_pre="v += w * poisson_step", namespace={"poisson_step": params["poisson_step"], "pPoisson": pPoisson}, dt=params["dt"])
-        self.poissonSynapses.connect(i="j")
+                                        on_pre="v += w * poisson_step", namespace={"poisson_step": params["poisson_step"]}, dt=params["dt"])
+        self.poissonSynapses.connect(p=pPoisson)
         self.poissonSynapses.w = 1
 
         sources, targets = self.mat.nonzero()
